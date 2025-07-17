@@ -27,8 +27,8 @@ jobs:
         run: |
           echo "Fazendo deploy de ${{ github.sha }} para produção..."
           aws deploy create-deployment \
-            --application-name ${{ vars.AWS_CODEDEPLOY_APPLICATION }} \
+            --application-name ${{ secrets.AWS_CODEDEPLOY_APPLICATION }} \
             --description "Commit ${{ github.sha }}" \
-            --deployment-group-name ${{ vars.AWS_CODEDEPLOY_DEPLOYMENT_GROUP }} \
+            --deployment-group-name ${{ secrets.AWS_CODEDEPLOY_DEPLOYMENT_GROUP }} \
             --github-location repository=${{ github.repository }},commitId=${{ github.sha }} \
             --ignore-application-stop-failures
