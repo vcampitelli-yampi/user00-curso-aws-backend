@@ -39,29 +39,36 @@ jobs:
           echo "id=${deployment_id}" >> "$GITHUB_OUTPUT"
 
       - name: Checando status do deployment
+        shell: bash
         env:
           deployment_id: ${{ steps.deployment.outputs.id }}
           minutes_to_retry: 15
         run: |
-          i=1                                                                                                                     
-          echo "Checando deploy ${deployment_id}"                                                                                 
-          while [ "$i" -le ${minutes_to_retry} ]; do                                                                                
-            status=$(aws deploy get-deployment --deployment-id "${deployment_id}" --query "deploymentInfo.status" --no-cli-pager --output text)
-            echo "Status do deploy: $status"                                                                                      
-                                                                                                                                  
-            if [ "$status" = "Failed" ]; then                                                                                     
-              echo -e "\e[31mDeploy ${deployment_id} falhou\e[0m"                                                                 
-              exit 1                                                                                                              
-            fi                                                                                                                    
-                                                                                                                                  
-            if [ "$status" = "Succeeded" ]; then                                                                                  
-              echo -e "\e[32mDeploy ${deployment_id} foi finalizado com sucesso\e[0m"                                             
-              exit 0                                                                                                              
-            fi                                                                                                                    
-                                                                                                                                  
-            sleep 60                                                                                                              
-            i=$((i + 1))                                                                                                          
-          done                                                                                                                    
-                                                                                                                                  
-          echo -e "\e[31mDeploy ${deployment_id} ainda não foi finalizado após ${minutes_to_retry} minutos\e[0m"                  
+          i=1
+          echo "Checando deploy ${deployment_id}"
+          while [ "$i" -le ${minutes_to_retry} ]; do
+            response=$(aws deploy get-deployment \
+              --deployment-id "${deployment_id}" \
+              --region sa-east-1 \
+              --query "deploymentInfo.[status,errorInformation.code,errorInformation.message]" \
+              --no-cli-pager --output text)
+            read aws_status aws_error_code aws_error_description <<< "$response"
+
+            echo "Status do deploy: $aws_status"
+
+            if [ "$aws_status" = "Failed" ]; then
+              echo -e "\e[1;31mDeploy ${deployment_id} falhou com erro ${aws_error_code}: ${aws_error_description}\e[0m"
+              exit 1
+            fi
+
+            if [ "$aws_status" = "Succeeded" ]; then
+              echo -e "\e[32mDeploy ${deployment_id} foi finalizado com sucesso\e[0m"
+              exit 0
+            fi
+
+            sleep 60
+            i=$((i + 1))
+          done
+
+          echo -e "\e[31mDeploy ${deployment_id} ainda não foi finalizado após ${minutes_to_retry} minutos\e[0m"
           exit 2
