@@ -1,9 +1,9 @@
 name: Backend - Deploy
 
+concurrency: production
 on:
   push:
     branches: [ 'main' ]
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -24,11 +24,44 @@ jobs:
           aws-region: sa-east-1
 
       - name: Criando deployment no AWS CodeDeploy
+        id: deployment
         run: |
           echo "Fazendo deploy de ${{ github.sha }} para produção..."
-          aws deploy create-deployment \
+          deployment_id=$(aws deploy create-deployment \
             --application-name ${{ secrets.AWS_CODEDEPLOY_APPLICATION }} \
             --description "Commit ${{ github.sha }}" \
             --deployment-group-name ${{ secrets.AWS_CODEDEPLOY_DEPLOYMENT_GROUP }} \
             --github-location repository=${{ github.repository }},commitId=${{ github.sha }} \
-            --ignore-application-stop-failures
+            --ignore-application-stop-failures \
+            --query "deploymentId" \
+            --output text)
+          echo "Gerado deploy $deployment_id"
+          echo "id=${deployment_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Checando status do deployment
+        env:
+          deployment_id: ${{ steps.deployment.outputs.id }}
+          minutes_to_retry: 15
+        run: |
+          i=1                                                                                                                     
+          echo "Checando deploy ${deployment_id}"                                                                                 
+          while [ "$i" -le ${minutes_to_retry} ]; do                                                                                
+            status=$(aws deploy get-deployment --deployment-id "${deployment_id}" --query "deploymentInfo.status" --no-cli-pager --output text)
+            echo "Status do deploy: $status"                                                                                      
+                                                                                                                                  
+            if [ "$status" = "Failed" ]; then                                                                                     
+              echo -e "\e[31mDeploy ${deployment_id} falhou\e[0m"                                                                 
+              exit 1                                                                                                              
+            fi                                                                                                                    
+                                                                                                                                  
+            if [ "$status" = "Succeeded" ]; then                                                                                  
+              echo -e "\e[32mDeploy ${deployment_id} foi finalizado com sucesso\e[0m"                                             
+              exit 0                                                                                                              
+            fi                                                                                                                    
+                                                                                                                                  
+            sleep 60                                                                                                              
+            i=$((i + 1))                                                                                                          
+          done                                                                                                                    
+                                                                                                                                  
+          echo -e "\e[31mDeploy ${deployment_id} ainda não foi finalizado após ${minutes_to_retry} minutos\e[0m"                  
+          exit 2
